@@ -1,12 +1,17 @@
-#!/usr/bin/python2
+#!/usr/bin/env python
 
 import logging
 import sys
 import time
-import urllib2
 import yaml
 
+try:
+    import urllib2
+except ImportError:
+    import urllib.request, urllib.error, urllib.parse
+
 from multiprocessing.pool import ThreadPool as Pool
+from functools import reduce
 
 try:
     import argparse
@@ -66,7 +71,10 @@ class G2ZProxy(object):
         """
 
         # Get list of uniq hostid
-        hostids = list(set(map(lambda x: int(x['hostid']), metrics)))
+        if sys.version_info >= (3, 0):
+            hostids = list(set([int(x['hostid']) for x in metrics]))
+        else:
+            hostids = list(set(map(lambda x: int(x['hostid']), metrics)))
 
         # Get host names by id
         hostids = self.zapi.host.get(hostids=hostids, output=['name'])
@@ -118,7 +126,10 @@ class G2ZProxy(object):
 
         # Input:    [ {'key_':'graphite[value]', 'hostid': '1', 'other': ... }, ... ]
         # Output:   [ {'host': 'localhost', 'metric':'value'}, ... ]
-        result = map(metrics_filter, metrics)
+        if sys.version_info >= (3, 0):
+            result = list(map(metrics_filter, metrics))
+        else:
+            result = map(metrics_filter, metrics)
 
         logger.debug("{0}:_getMonitored():{1}".format(self.__class__.__name__, result))
         return result
@@ -134,7 +145,10 @@ class G2ZProxy(object):
 
         result = None
 
-        params = map(lambda x: x.strip(), metric['metric'].split(';'))
+        if sys.version_info >= (3, 0):
+            params = [x.strip() for x in metric['metric'].split(';')]
+        else:
+            params = map(lambda x: x.strip(), metric['metric'].split(';'))
 
         if len(params) > 1:
             req_metric = '{0}.{1}'.format(metric['host'], params[0])
@@ -161,7 +175,10 @@ class G2ZProxy(object):
             s_time = time.time()
             try:
                 # Get data from graphite API
-                res = urllib2.urlopen(url)
+                if sys.version_info >= (3, 0):
+                    res = urllib.request.urlopen(url)
+                else:
+                    res = urllib2.urlopen(url)
                 data = yaml.load(res)
             except Exception as e:
                 # if error, process next metric and print exception
@@ -171,12 +188,15 @@ class G2ZProxy(object):
                 e_time = time.time() - s_time
                 # Convert to milliseconds
                 e_time = int(e_time * 1000)
-                print "{url} {time}ms".format(time=e_time, url=url)
+                print("{url} {time}ms".format(time=e_time, url=url))
 
             logger.debug("{0}:_getGraphiteData(): data:{1}\n".format(self.__class__.__name__, data))
             # Process data if it not empty
             if len(data) and 'datapoints' in data[0]:
-                data = filter(lambda d: d[0] != None, data[0]['datapoints'])
+                if sys.version_info >= (3, 0):
+                    data = [d for d in data[0]['datapoints'] if d[0] != None]
+                else:
+                    data = filter(lambda d: d[0] != None, data[0]['datapoints'])
                 logger.debug("{0}:_getGraphiteData(): filter(data):{1}".format(self.__class__.__name__, data))
 
                 if data:
@@ -215,7 +235,7 @@ class G2ZProxy(object):
                 metric = '{0}[{1}]'.format(self.key, m['metric'])
                 msg.append(ZabbixMetric(m['host'], metric, m['value'], m['time']))
         ZabbixSender(zabbix_server=self.server_ip, zabbix_port=self.server_port).send(msg)
-        print(len(self.metrics))
+        print((len(self.metrics)))
 
 if __name__ == '__main__':
 
@@ -231,7 +251,7 @@ if __name__ == '__main__':
             help='Specify zabbix password.')
     argparser.add_argument('-g', '--graphite-url', default='http://localhost',
             help='Specify URL to Graphite.')
-    argparser.add_argument('-zsi', '--zabbix-server-ip', default='localhost',
+    argparser.add_argument('-zsi', '--zabbix-server-ip', default='127.0.0.1',
             help='Specify Zabbix server ip.')
     argparser.add_argument('-zsp', '--zabbix-server-port', default='10051',
             help='Specify Zabbix server port (default 10051).')
@@ -252,3 +272,4 @@ if __name__ == '__main__':
             server_ip = args.zabbix_server_ip,
             server_port = int(args.zabbix_server_port),
             threads = args.threads)
+
